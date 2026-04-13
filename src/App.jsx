@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, get, remove } from "firebase/database";
 
 const DEFAULT_CATEGORIES = [
   { name: "채소", color: "#1D9E75" },
@@ -24,6 +24,7 @@ const DEFAULT_CATEGORIES = [
 const COLORS = ["#1D9E75","#D85A30","#A32D2D","#0F6E56","#BA7517","#EF9F27","#639922","#7F77DD","#D4537E","#378ADD","#993556","#185FA5","#72243E","#534AB7","#5F5E5A","#0C447C","#854F0B","#3B6D11"];
 
 const genId = () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const genCode = () => Math.random().toString(36).substr(2, 6).toUpperCase();
 
 async function callClaude(prompt, imageBase64 = null) {
   const content = imageBase64
@@ -61,49 +62,127 @@ export default function App() {
   const [editingCat, setEditingCat] = useState(null);
   const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
   const [recipeModal, setRecipeModal] = useState(null);
+  const [familyCode, setFamilyCode] = useState(null); // 현재 속한 가족 코드
+  const [familyMembers, setFamilyMembers] = useState([]);
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [familyMsg, setFamilyMsg] = useState("");
+  const [showFamilyPanel, setShowFamilyPanel] = useState(false);
   const cameraRef = useRef();
   const galleryRef = useRef();
+
+  // 데이터 저장 경로: 가족 코드가 있으면 families/{code}, 없으면 users/{uid}
+  const dataPath = familyCode ? `families/${familyCode}` : user ? `users/${user.uid}` : null;
 
   const getCatColor = (name) => categories.find(c => c.name === name)?.color || "#888";
   const catNames = categories.map(c => c.name);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      if (u) {
+        // 기존 가족 코드 확인
+        const snap = await get(ref(db, `users/${u.uid}/familyCode`));
+        if (snap.val()) setFamilyCode(snap.val());
+      }
       setAuthLoading(false);
     });
     return unsub;
   }, []);
 
+  // 데이터 불러오기
   useEffect(() => {
-    if (!user) return;
-    const itemsRef = ref(db, `users/${user.uid}/items`);
-    const catsRef = ref(db, `users/${user.uid}/categories`);
+    if (!user || !dataPath) return;
+    const itemsRef = ref(db, `${dataPath}/items`);
+    const catsRef = ref(db, `${dataPath}/categories`);
     const unsub1 = onValue(itemsRef, (snap) => {
       setItems(snap.val() ? Object.values(snap.val()) : []);
     });
     const unsub2 = onValue(catsRef, (snap) => {
       setCategories(snap.val() ? Object.values(snap.val()) : DEFAULT_CATEGORIES);
     });
+    // 가족 멤버 불러오기
+    if (familyCode) {
+      const membersRef = ref(db, `families/${familyCode}/members`);
+      const unsub3 = onValue(membersRef, (snap) => {
+        setFamilyMembers(snap.val() ? Object.values(snap.val()) : []);
+      });
+      return () => { unsub1(); unsub2(); unsub3(); };
+    }
     return () => { unsub1(); unsub2(); };
-  }, [user]);
+  }, [user, dataPath, familyCode]);
 
+  // 아이템 저장
   useEffect(() => {
-    if (!user || items.length === 0) return;
+    if (!user || !dataPath || items.length === 0) return;
     const obj = {};
     items.forEach(i => { obj[String(i.id).replace(/\./g, "_")] = i; });
-    set(ref(db, `users/${user.uid}/items`), obj);
-  }, [items, user]);
+    set(ref(db, `${dataPath}/items`), obj);
+  }, [items, user, dataPath]);
 
+  // 카테고리 저장
   useEffect(() => {
-    if (!user) return;
+    if (!user || !dataPath) return;
     const obj = {};
     categories.forEach((c, i) => { obj[i] = c; });
-    set(ref(db, `users/${user.uid}/categories`), obj);
-  }, [categories, user]);
+    set(ref(db, `${dataPath}/categories`), obj);
+  }, [categories, user, dataPath]);
 
   const login = () => signInWithPopup(auth, provider);
-  const logout = () => { signOut(auth); setItems([]); setCategories(DEFAULT_CATEGORIES); };
+  const logout = () => {
+    signOut(auth);
+    setItems([]);
+    setCategories(DEFAULT_CATEGORIES);
+    setFamilyCode(null);
+    setFamilyMembers([]);
+  };
+
+  // 가족 코드 생성
+  const createFamily = async () => {
+    const code = genCode();
+    await set(ref(db, `families/${code}/members/${user.uid}`), {
+      uid: user.uid,
+      name: user.displayName,
+      photo: user.photoURL,
+    });
+    // 기존 개인 데이터를 가족 공간으로 이전
+    const itemsSnap = await get(ref(db, `users/${user.uid}/items`));
+    const catsSnap = await get(ref(db, `users/${user.uid}/categories`));
+    if (itemsSnap.val()) await set(ref(db, `families/${code}/items`), itemsSnap.val());
+    if (catsSnap.val()) await set(ref(db, `families/${code}/categories`), catsSnap.val());
+    await set(ref(db, `users/${user.uid}/familyCode`), code);
+    setFamilyCode(code);
+    setFamilyMsg(`✅ 가족 코드 생성 완료! 코드: ${code}`);
+  };
+
+  // 가족 코드로 참여
+  const joinFamily = async () => {
+    const code = joinCodeInput.trim().toUpperCase();
+    if (!code) return;
+    const snap = await get(ref(db, `families/${code}`));
+    if (!snap.val()) {
+      setFamilyMsg("❌ 존재하지 않는 코드예요.");
+      return;
+    }
+    await set(ref(db, `families/${code}/members/${user.uid}`), {
+      uid: user.uid,
+      name: user.displayName,
+      photo: user.photoURL,
+    });
+    await set(ref(db, `users/${user.uid}/familyCode`), code);
+    setFamilyCode(code);
+    setJoinCodeInput("");
+    setFamilyMsg("✅ 가족 냉장고에 참여했어요!");
+  };
+
+  // 가족에서 나가기
+  const leaveFamily = async () => {
+    if (!familyCode) return;
+    await remove(ref(db, `families/${familyCode}/members/${user.uid}`));
+    await remove(ref(db, `users/${user.uid}/familyCode`));
+    setFamilyCode(null);
+    setFamilyMembers([]);
+    setFamilyMsg("가족 냉장고에서 나왔어요.");
+  };
 
   const addCategory = () => {
     if (!newCatName.trim() || categories.find(c => c.name === newCatName.trim())) return;
@@ -234,7 +313,7 @@ export default function App() {
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
 
-      {/* 해먹었어요 확인 모달 */}
+      {/* 해먹었어요 모달 */}
       {recipeModal && (
         <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
@@ -248,10 +327,7 @@ export default function App() {
                     <span style={{ flex: 1, fontSize: 14 }}>{u.item.name}</span>
                     <span style={{ fontSize: 12, color: "#aaa" }}>보유: {u.item.qty}{u.item.unit}</span>
                     <input
-                      type="number"
-                      value={u.used}
-                      min={0}
-                      max={u.item.qty}
+                      type="number" value={u.used} min={0} max={u.item.qty}
                       onChange={e => setRecipeModal(prev => ({
                         ...prev,
                         usages: prev.usages.map((x, j) => j === i ? { ...x, used: parseFloat(e.target.value) || 0 } : x)
@@ -272,6 +348,56 @@ export default function App() {
               <button onClick={confirmRecipe} style={{ ...s.btn(true), flex: 1 }}>확정 — 재료 차감</button>
               <button onClick={() => setRecipeModal(null)} style={s.btn(false)}>취소</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 가족 공유 패널 모달 */}
+      {showFamilyPanel && (
+        <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: 17 }}>👨‍👩‍👧 가족 냉장고 공유</h3>
+
+            {!familyCode ? (
+              <>
+                <p style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>가족 코드를 만들거나 기존 코드로 참여하세요!</p>
+                <button onClick={createFamily} style={{ ...s.btn(true), width: "100%", marginBottom: 12 }}>
+                  ➕ 가족 코드 만들기
+                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    style={{ ...s.input, flex: 1 }}
+                    placeholder="가족 코드 입력 (6자리)"
+                    value={joinCodeInput}
+                    onChange={e => setJoinCodeInput(e.target.value.toUpperCase())}
+                    maxLength={6}
+                  />
+                  <button onClick={joinFamily} style={s.btn(true)}>참여</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ background: "#f0faf5", borderRadius: 10, padding: "12px 16px", marginBottom: 16, textAlign: "center" }}>
+                  <p style={{ fontSize: 12, color: "#888", margin: "0 0 4px" }}>가족 코드</p>
+                  <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: 6, color: "#1D9E75", margin: 0 }}>{familyCode}</p>
+                  <p style={{ fontSize: 12, color: "#aaa", margin: "4px 0 0" }}>이 코드를 가족에게 공유하세요!</p>
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>멤버 ({familyMembers.length}명)</p>
+                {familyMembers.map((m, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <img src={m.photo} width={28} height={28} style={{ borderRadius: "50%" }} alt="" />
+                    <span style={{ fontSize: 14 }}>{m.name}</span>
+                    {m.uid === user.uid && <span style={{ fontSize: 11, color: "#378ADD" }}>나</span>}
+                  </div>
+                ))}
+                <button onClick={leaveFamily} style={{ ...s.btn(false), width: "100%", marginTop: 12, color: "#E24B4A", borderColor: "#fcc" }}>
+                  가족 냉장고 나가기
+                </button>
+              </>
+            )}
+
+            {familyMsg && <p style={{ fontSize: 13, color: "#1D9E75", marginTop: 12 }}>{familyMsg}</p>}
+            <button onClick={() => { setShowFamilyPanel(false); setFamilyMsg(""); }} style={{ ...s.btn(false), width: "100%", marginTop: 8 }}>닫기</button>
           </div>
         </div>
       )}
@@ -298,11 +424,15 @@ export default function App() {
       {!authLoading && user && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: 8 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>🧊 냉장고 트래커</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>🧊 냉장고 트래커</h2>
+              {familyCode && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#e8f4ff", color: "#378ADD" }}>👨‍👩‍👧 가족</span>}
+            </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <img src={user.photoURL} width={28} height={28} style={{ borderRadius: "50%" }} alt="profile" />
-              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>📷 카메라</button>
-              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>🖼️ 갤러리</button>
+              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>📷</button>
+              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>🖼️</button>
+              <button onClick={() => setShowFamilyPanel(true)} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>👨‍👩‍👧 가족</button>
               <button onClick={logout} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>로그아웃</button>
             </div>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
@@ -417,18 +547,11 @@ export default function App() {
                   <p style={{ fontSize: 13, color: "#666", margin: "0 0 6px" }}>재료: {r.ingredients.join(", ")}</p>
                   <p style={{ fontSize: 13, color: "#333", margin: "0 0 12px" }}>💡 {r.tip}</p>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <a
-                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(r.name + " 레시피")}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", textDecoration: "none", color: "#E24B4A", borderColor: "#fcc", display: "inline-block" }}
-                    >
+                    <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(r.name + " 레시피")}`} target="_blank" rel="noopener noreferrer"
+                      style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", textDecoration: "none", color: "#E24B4A", borderColor: "#fcc", display: "inline-block" }}>
                       ▶ 유튜브 보기
                     </a>
-                    <button
-                      onClick={() => openRecipeModal(r)}
-                      style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", color: "#1D9E75", borderColor: "#1D9E75" }}
-                    >
+                    <button onClick={() => openRecipeModal(r)} style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", color: "#1D9E75", borderColor: "#1D9E75" }}>
                       ✅ 해먹었어요
                     </button>
                   </div>
@@ -451,20 +574,16 @@ export default function App() {
                 </div>
                 <button onClick={addCategory} style={{ ...s.btn(true), width: "100%" }}>+ 추가</button>
               </div>
-
               <div style={s.card}>
                 <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 12px" }}>카테고리 목록</p>
                 {categories.map(cat => (
                   <div key={cat.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <span style={{ width: 12, height: 12, borderRadius: "50%", background: cat.color, flexShrink: 0 }}></span>
                     {editingCat === cat.name ? (
-                      <input
-                        autoFocus
-                        defaultValue={cat.name}
+                      <input autoFocus defaultValue={cat.name}
                         onBlur={e => updateCategoryName(cat.name, e.target.value)}
                         onKeyDown={e => e.key === "Enter" && updateCategoryName(cat.name, e.target.value)}
-                        style={{ ...s.input, flex: 1, fontSize: 13 }}
-                      />
+                        style={{ ...s.input, flex: 1, fontSize: 13 }} />
                     ) : (
                       <span style={{ flex: 1, fontSize: 14 }}>{cat.name}</span>
                     )}
