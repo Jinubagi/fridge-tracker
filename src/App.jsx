@@ -59,7 +59,7 @@ export default function App() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState(COLORS[0]);
   const [editingCat, setEditingCat] = useState(null);
-  const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
+  const [recipeModal, setRecipeModal] = useState(null); // {recipe, usages: [{item, used}]}
   const cameraRef = useRef();
   const galleryRef = useRef();
 
@@ -382,7 +382,7 @@ export default function App() {
                       ▶ 유튜브 보기
                     </a>
                     <button
-                      onClick={() => applyRecipe(r)}
+                      onClick={() => openRecipeModal(r)}
                       style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", color: "#1D9E75", borderColor: "#1D9E75" }}
                     >
                       ✅ 해먹었어요
