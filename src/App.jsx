@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { auth, provider, db } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, set, get, remove } from "firebase/database";
@@ -62,25 +62,28 @@ export default function App() {
   const [editingCat, setEditingCat] = useState(null);
   const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
   const [recipeModal, setRecipeModal] = useState(null);
-  const [familyCode, setFamilyCode] = useState(null); // 현재 속한 가족 코드
+  const [familyCode, setFamilyCode] = useState(null);
   const [familyMembers, setFamilyMembers] = useState([]);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [familyMsg, setFamilyMsg] = useState("");
   const [showFamilyPanel, setShowFamilyPanel] = useState(false);
+  const [saveLock, setSaveLock] = useState(false); // 불러오는 중 저장 방지
   const cameraRef = useRef();
   const galleryRef = useRef();
 
-  // 데이터 저장 경로: 가족 코드가 있으면 families/{code}, 없으면 users/{uid}
-  const dataPath = familyCode ? `families/${familyCode}` : user ? `users/${user.uid}` : null;
+  const dataPath = useMemo(() => {
+    if (!user) return null;
+    return familyCode ? `families/${familyCode}` : `users/${user.uid}`;
+  }, [user, familyCode]);
 
   const getCatColor = (name) => categories.find(c => c.name === name)?.color || "#888";
   const catNames = categories.map(c => c.name);
 
+  // 로그인 감지
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // 기존 가족 코드 확인
         const snap = await get(ref(db, `users/${u.uid}/familyCode`));
         if (snap.val()) setFamilyCode(snap.val());
       }
@@ -89,43 +92,46 @@ export default function App() {
     return unsub;
   }, []);
 
-  // 데이터 불러오기
+  // 데이터 불러오기 — dataPath 바뀔 때마다 리스너 재연결
   useEffect(() => {
     if (!user || !dataPath) return;
+    setSaveLock(true);
     const itemsRef = ref(db, `${dataPath}/items`);
     const catsRef = ref(db, `${dataPath}/categories`);
+
     const unsub1 = onValue(itemsRef, (snap) => {
       setItems(snap.val() ? Object.values(snap.val()) : []);
+      setSaveLock(false);
     });
     const unsub2 = onValue(catsRef, (snap) => {
       setCategories(snap.val() ? Object.values(snap.val()) : DEFAULT_CATEGORIES);
     });
-    // 가족 멤버 불러오기
+
+    let unsub3 = () => {};
     if (familyCode) {
-      const membersRef = ref(db, `families/${familyCode}/members`);
-      const unsub3 = onValue(membersRef, (snap) => {
+      unsub3 = onValue(ref(db, `families/${familyCode}/members`), (snap) => {
         setFamilyMembers(snap.val() ? Object.values(snap.val()) : []);
       });
-      return () => { unsub1(); unsub2(); unsub3(); };
     }
-    return () => { unsub1(); unsub2(); };
+
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [user, dataPath, familyCode]);
 
   // 아이템 저장
   useEffect(() => {
-    if (!user || !dataPath || items.length === 0) return;
+    if (!user || !dataPath || saveLock) return;
     const obj = {};
     items.forEach(i => { obj[String(i.id).replace(/\./g, "_")] = i; });
-    set(ref(db, `${dataPath}/items`), obj);
-  }, [items, user, dataPath]);
+    set(ref(db, `${dataPath}/items`), items.length === 0 ? null : obj);
+  }, [items, user, dataPath, saveLock]);
 
   // 카테고리 저장
   useEffect(() => {
-    if (!user || !dataPath) return;
+    if (!user || !dataPath || saveLock) return;
     const obj = {};
     categories.forEach((c, i) => { obj[i] = c; });
     set(ref(db, `${dataPath}/categories`), obj);
-  }, [categories, user, dataPath]);
+  }, [categories, user, dataPath, saveLock]);
 
   const login = () => signInWithPopup(auth, provider);
   const logout = () => {
@@ -136,37 +142,27 @@ export default function App() {
     setFamilyMembers([]);
   };
 
-  // 가족 코드 생성
   const createFamily = async () => {
     const code = genCode();
     await set(ref(db, `families/${code}/members/${user.uid}`), {
-      uid: user.uid,
-      name: user.displayName,
-      photo: user.photoURL,
+      uid: user.uid, name: user.displayName, photo: user.photoURL,
     });
-    // 기존 개인 데이터를 가족 공간으로 이전
     const itemsSnap = await get(ref(db, `users/${user.uid}/items`));
     const catsSnap = await get(ref(db, `users/${user.uid}/categories`));
     if (itemsSnap.val()) await set(ref(db, `families/${code}/items`), itemsSnap.val());
     if (catsSnap.val()) await set(ref(db, `families/${code}/categories`), catsSnap.val());
     await set(ref(db, `users/${user.uid}/familyCode`), code);
     setFamilyCode(code);
-    setFamilyMsg(`✅ 가족 코드 생성 완료! 코드: ${code}`);
+    setFamilyMsg(`✅ 가족 코드 생성 완료!`);
   };
 
-  // 가족 코드로 참여
   const joinFamily = async () => {
     const code = joinCodeInput.trim().toUpperCase();
     if (!code) return;
     const snap = await get(ref(db, `families/${code}`));
-    if (!snap.val()) {
-      setFamilyMsg("❌ 존재하지 않는 코드예요.");
-      return;
-    }
+    if (!snap.val()) { setFamilyMsg("❌ 존재하지 않는 코드예요."); return; }
     await set(ref(db, `families/${code}/members/${user.uid}`), {
-      uid: user.uid,
-      name: user.displayName,
-      photo: user.photoURL,
+      uid: user.uid, name: user.displayName, photo: user.photoURL,
     });
     await set(ref(db, `users/${user.uid}/familyCode`), code);
     setFamilyCode(code);
@@ -174,7 +170,6 @@ export default function App() {
     setFamilyMsg("✅ 가족 냉장고에 참여했어요!");
   };
 
-  // 가족에서 나가기
   const leaveFamily = async () => {
     if (!familyCode) return;
     await remove(ref(db, `families/${familyCode}/members/${user.uid}`));
@@ -292,11 +287,8 @@ export default function App() {
     recipeModal.usages.forEach(({ item, used }) => {
       if (!item) return;
       const newQty = Math.max(0, item.qty - used);
-      if (newQty === 0) {
-        newItems = newItems.filter(i => i.id !== item.id);
-      } else {
-        newItems = newItems.map(i => i.id === item.id ? { ...i, qty: newQty } : i);
-      }
+      if (newQty === 0) newItems = newItems.filter(i => i.id !== item.id);
+      else newItems = newItems.map(i => i.id === item.id ? { ...i, qty: newQty } : i);
     });
     setItems(newItems);
     setRecipeModal(null);
@@ -326,14 +318,12 @@ export default function App() {
                     <span style={{ width: 10, height: 10, borderRadius: "50%", background: getCatColor(u.item.category), flexShrink: 0 }} />
                     <span style={{ flex: 1, fontSize: 14 }}>{u.item.name}</span>
                     <span style={{ fontSize: 12, color: "#aaa" }}>보유: {u.item.qty}{u.item.unit}</span>
-                    <input
-                      type="number" value={u.used} min={0} max={u.item.qty}
+                    <input type="number" value={u.used} min={0} max={u.item.qty}
                       onChange={e => setRecipeModal(prev => ({
                         ...prev,
                         usages: prev.usages.map((x, j) => j === i ? { ...x, used: parseFloat(e.target.value) || 0 } : x)
                       }))}
-                      style={{ ...s.input, width: 60, fontSize: 13 }}
-                    />
+                      style={{ ...s.input, width: 60, fontSize: 13 }} />
                     <span style={{ fontSize: 12, color: "#aaa" }}>{u.item.unit}</span>
                   </>
                 ) : (
@@ -352,26 +342,18 @@ export default function App() {
         </div>
       )}
 
-      {/* 가족 공유 패널 모달 */}
+      {/* 가족 공유 패널 */}
       {showFamilyPanel && (
         <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 17 }}>👨‍👩‍👧 가족 냉장고 공유</h3>
-
             {!familyCode ? (
               <>
                 <p style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>가족 코드를 만들거나 기존 코드로 참여하세요!</p>
-                <button onClick={createFamily} style={{ ...s.btn(true), width: "100%", marginBottom: 12 }}>
-                  ➕ 가족 코드 만들기
-                </button>
+                <button onClick={createFamily} style={{ ...s.btn(true), width: "100%", marginBottom: 12 }}>➕ 가족 코드 만들기</button>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    style={{ ...s.input, flex: 1 }}
-                    placeholder="가족 코드 입력 (6자리)"
-                    value={joinCodeInput}
-                    onChange={e => setJoinCodeInput(e.target.value.toUpperCase())}
-                    maxLength={6}
-                  />
+                  <input style={{ ...s.input, flex: 1 }} placeholder="가족 코드 입력 (6자리)"
+                    value={joinCodeInput} onChange={e => setJoinCodeInput(e.target.value.toUpperCase())} maxLength={6} />
                   <button onClick={joinFamily} style={s.btn(true)}>참여</button>
                 </div>
               </>
@@ -395,7 +377,6 @@ export default function App() {
                 </button>
               </>
             )}
-
             {familyMsg && <p style={{ fontSize: 13, color: "#1D9E75", marginTop: 12 }}>{familyMsg}</p>}
             <button onClick={() => { setShowFamilyPanel(false); setFamilyMsg(""); }} style={{ ...s.btn(false), width: "100%", marginTop: 8 }}>닫기</button>
           </div>
