@@ -1,0 +1,408 @@
+import { useState, useRef, useEffect } from "react";
+import { auth, provider, db } from "./firebase";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { ref, onValue, set } from "firebase/database";
+
+const DEFAULT_CATEGORIES = [
+  { name: "채소", color: "#1D9E75" },
+  { name: "과일", color: "#D85A30" },
+  { name: "육류", color: "#A32D2D" },
+  { name: "해산물/수산", color: "#0F6E56" },
+  { name: "유제품", color: "#BA7517" },
+  { name: "계란", color: "#EF9F27" },
+  { name: "두부/콩류", color: "#639922" },
+  { name: "면/파스타", color: "#7F77DD" },
+  { name: "밥/곡류", color: "#D4537E" },
+  { name: "냉동식품", color: "#378ADD" },
+  { name: "양념/소스", color: "#993556" },
+  { name: "음료/주스", color: "#185FA5" },
+  { name: "술", color: "#72243E" },
+  { name: "간식/과자", color: "#534AB7" },
+  { name: "기타", color: "#5F5E5A" },
+];
+
+const COLORS = ["#1D9E75","#D85A30","#A32D2D","#0F6E56","#BA7517","#EF9F27","#639922","#7F77DD","#D4537E","#378ADD","#993556","#185FA5","#72243E","#534AB7","#5F5E5A","#0C447C","#854F0B","#3B6D11"];
+
+async function callClaude(prompt, imageBase64 = null) {
+  const content = imageBase64
+    ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } }, { type: "text", text: prompt }]
+    : [{ type: "text", text: prompt }];
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content }] })
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || "";
+}
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [items, setItems] = useState([]);
+  const [tab, setTab] = useState("fridge");
+  const [scanning, setScanning] = useState(false);
+  const [scanned, setScanned] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiResult, setAiResult] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [useQty, setUseQty] = useState({});
+  const [filterCat, setFilterCat] = useState("전체");
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatColor, setNewCatColor] = useState(COLORS[0]);
+  const [editingCat, setEditingCat] = useState(null);
+  const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
+  const fileRef = useRef();
+
+  const getCatColor = (name) => categories.find(c => c.name === name)?.color || "#888";
+  const catNames = categories.map(c => c.name);
+
+  // 로그인 상태 감지
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  // Firebase에서 데이터 불러오기
+  useEffect(() => {
+    if (!user) return;
+    const itemsRef = ref(db, `users/${user.uid}/items`);
+    const catsRef = ref(db, `users/${user.uid}/categories`);
+    const unsub1 = onValue(itemsRef, (snap) => {
+      setItems(snap.val() ? Object.values(snap.val()) : []);
+    });
+    const unsub2 = onValue(catsRef, (snap) => {
+      setCategories(snap.val() ? Object.values(snap.val()) : DEFAULT_CATEGORIES);
+    });
+    return () => { unsub1(); unsub2(); };
+  }, [user]);
+
+  // Firebase에 데이터 저장
+  useEffect(() => {
+    if (!user) return;
+    const obj = {};
+    items.forEach(i => { obj[i.id] = i; });
+    set(ref(db, `users/${user.uid}/items`), obj);
+  }, [items, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const obj = {};
+    categories.forEach((c, i) => { obj[i] = c; });
+    set(ref(db, `users/${user.uid}/categories`), obj);
+  }, [categories, user]);
+
+  const login = () => signInWithPopup(auth, provider);
+  const logout = () => { signOut(auth); setItems([]); setCategories(DEFAULT_CATEGORIES); };
+
+  const addCategory = () => {
+    if (!newCatName.trim() || categories.find(c => c.name === newCatName.trim())) return;
+    setCategories(prev => [...prev, { name: newCatName.trim(), color: newCatColor }]);
+    setNewCatName("");
+  };
+
+  const removeCategory = (name) => {
+    setCategories(prev => prev.filter(c => c.name !== name));
+    setItems(prev => prev.map(i => i.category === name ? { ...i, category: "기타" } : i));
+    if (filterCat === name) setFilterCat("전체");
+  };
+
+  const updateCategoryColor = (name, color) => {
+    setCategories(prev => prev.map(c => c.name === name ? { ...c, color } : c));
+  };
+
+  const updateCategoryName = (oldName, newName) => {
+    if (!newName.trim() || categories.find(c => c.name === newName.trim() && c.name !== oldName)) return;
+    setCategories(prev => prev.map(c => c.name === oldName ? { ...c, name: newName.trim() } : c));
+    setItems(prev => prev.map(i => i.category === oldName ? { ...i, category: newName.trim() } : i));
+    setEditingCat(null);
+  };
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setScanning(true);
+    setScanned([]);
+    setTab("scan");
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target.result.split(",")[1];
+      try {
+        const catList = catNames.join("|");
+        const text = await callClaude(
+          `이 이미지를 분석해서 식료품 목록을 추출해주세요.
+영수증, 냉장고 내부 사진, 제품 사진 모두 가능해요. 보이는 식료품을 모두 파악해주세요.
+수량을 알 수 없으면 1로, 단위는 개/g/ml/팩/봉/병 중 적절한 걸 선택하세요.
+반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{"items":[{"name":"상품명","qty":1,"unit":"개","category":"분류"}]}
+카테고리는 반드시 이 목록 중 하나로만 분류하세요: ${catList}`, base64);
+        const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+        setScanned(parsed.items.map((i, idx) => ({ ...i, id: `scan-${idx}` })));
+      } catch { setScanned([]); }
+      setScanning(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateScanned = (id, field, val) => setScanned(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i));
+
+  const confirmScanned = () => {
+    setItems(prev => [...prev, ...scanned.map(i => ({ ...i, id: Date.now() + Math.random() }))]);
+    setScanned([]);
+    setTab("fridge");
+  };
+
+  const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+
+  const applyUse = (item) => {
+    const used = parseFloat(useQty[item.id] || 0);
+    if (!used) return;
+    const newQty = Math.max(0, item.qty - used);
+    setItems(prev => newQty === 0 ? prev.filter(i => i.id !== item.id) : prev.map(i => i.id === item.id ? { ...i, qty: newQty } : i));
+    setUseQty(prev => ({ ...prev, [item.id]: "" }));
+  };
+
+  const addItem = () => {
+    if (!form.name.trim()) return;
+    setItems(prev => [...prev, { ...form, qty: parseFloat(form.qty) || 1, id: Date.now() }]);
+    setForm(p => ({ ...p, name: "", qty: "" }));
+  };
+
+  const callAI = async () => {
+    if (!aiInput.trim() || items.length === 0) return;
+    setAiLoading(true);
+    setAiResult([]);
+    const list = items.map(i => `${i.name}(${i.qty}${i.unit})`).join(", ");
+    try {
+      const text = await callClaude(`당신은 요리 전문가입니다.
+현재 냉장고 재료: ${list}
+사용자 요청: ${aiInput}
+반드시 아래 JSON 형식으로만 응답하세요:
+{"recipes":[{"name":"요리명","ingredients":["재료1"],"tip":"팁","difficulty":"쉬움/보통/어려움"}]}`);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setAiResult(parsed.recipes);
+    } catch { setAiResult("error"); }
+    setAiLoading(false);
+  };
+
+  const filtered = filterCat === "전체" ? items : items.filter(i => i.category === filterCat);
+
+  const s = {
+    card: { background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "1rem", marginBottom: 10 },
+    btn: (active, color) => ({ padding: "7px 14px", borderRadius: 8, border: `1px solid ${active ? (color||"#378ADD") : "#ddd"}`, background: active ? (color||"#378ADD") : "#fff", color: active ? "#fff" : "#444", cursor: "pointer", fontSize: 14 }),
+    input: { padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14, width: "100%", boxSizing: "border-box" },
+  };
+
+  return (
+    <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+
+      {/* 로딩 */}
+      {authLoading && (
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "#aaa" }}>
+          <div style={{ fontSize: 40 }}>🧊</div>
+          <p>로딩 중...</p>
+        </div>
+      )}
+
+      {/* 로그인 화면 */}
+      {!authLoading && !user && (
+        <div style={{ textAlign: "center", padding: "4rem 1rem" }}>
+          <div style={{ fontSize: 50, marginBottom: 16 }}>🧊</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>냉장고 트래커</h2>
+          <p style={{ color: "#888", marginBottom: 32 }}>Google 계정으로 로그인하면<br/>어느 기기에서든 냉장고를 관리할 수 있어요!</p>
+          <button onClick={login} style={{ padding: "12px 32px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 10, boxShadow: "0 2px 8px #0001" }}>
+            <img src="https://www.google.com/favicon.ico" width={20} height={20} alt="google" />
+            Google로 로그인
+          </button>
+        </div>
+      )}
+
+      {/* 메인 앱 */}
+      {!authLoading && user && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+            <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>🧊 냉장고 트래커</h2>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <img src={user.photoURL} width={28} height={28} style={{ borderRadius: "50%" }} alt="profile" />
+              <button onClick={() => fileRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75" }}>
+                📷 스캔
+              </button>
+              <button onClick={logout} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>로그아웃</button>
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
+          </div>
+
+          {/* 탭 */}
+          <div style={{ display: "flex", gap: 8, marginBottom: "1rem" }}>
+            {[["fridge","🧊 냉장고"],["ai","✨ AI 추천"],["cats","📂 카테고리"]].map(([id, label]) => (
+              <button key={id} onClick={() => setTab(id)} style={s.btn(tab===id)}>{label}</button>
+            ))}
+          </div>
+
+          {/* 스캔 결과 */}
+          {tab === "scan" && (
+            <div style={s.card}>
+              {scanning ? (
+                <div style={{ textAlign: "center", padding: "2rem", color: "#888" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                  <p style={{ margin: 0 }}>이미지 분석 중...</p>
+                </div>
+              ) : scanned.length === 0 ? (
+                <p style={{ color: "#aaa", textAlign: "center" }}>인식된 항목이 없어요.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "#888", margin: "0 0 12px" }}>인식된 항목을 확인하고 수정해주세요!</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 55px 45px 90px 24px", gap: 5, marginBottom: 6 }}>
+                    {["이름","수량","단위","카테고리",""].map((h,i) => <span key={i} style={{ fontSize: 11, color: "#aaa" }}>{h}</span>)}
+                  </div>
+                  {scanned.map(item => (
+                    <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 55px 45px 90px 24px", gap: 5, marginBottom: 6, alignItems: "center" }}>
+                      <input value={item.name} onChange={e => updateScanned(item.id, "name", e.target.value)} style={{ ...s.input, fontSize: 13 }} />
+                      <input type="number" value={item.qty} onChange={e => updateScanned(item.id, "qty", parseFloat(e.target.value))} style={{ ...s.input, fontSize: 13 }} />
+                      <input value={item.unit} onChange={e => updateScanned(item.id, "unit", e.target.value)} style={{ ...s.input, fontSize: 13 }} />
+                      <select value={item.category} onChange={e => updateScanned(item.id, "category", e.target.value)} style={{ ...s.input, fontSize: 12 }}>
+                        {catNames.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                      <button onClick={() => setScanned(prev => prev.filter(i => i.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: "#E24B4A", fontSize: 18 }}>×</button>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button onClick={confirmScanned} style={{ ...s.btn(true), flex: 1 }}>냉장고에 추가 ({scanned.length}개)</button>
+                    <button onClick={() => { setScanned([]); setTab("fridge"); }} style={s.btn(false)}>취소</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 냉장고 탭 */}
+          {tab === "fridge" && (
+            <>
+              <div style={s.card}>
+                <p style={{ fontSize: 12, color: "#888", margin: "0 0 8px" }}>직접 추가</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 50px 1fr", gap: 6, marginBottom: 8 }}>
+                  <input style={{ ...s.input, fontSize: 13 }} placeholder="재료명" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem()} />
+                  <input type="number" style={{ ...s.input, fontSize: 13 }} placeholder="수량" value={form.qty} onChange={e => setForm(p => ({ ...p, qty: e.target.value }))} />
+                  <input style={{ ...s.input, fontSize: 13 }} placeholder="단위" value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} />
+                  <select style={{ ...s.input, fontSize: 12 }} value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
+                    {catNames.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <button onClick={addItem} style={{ ...s.btn(true), width: "100%" }}>+ 추가</button>
+              </div>
+
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                {["전체", ...catNames].map(c => (
+                  <button key={c} onClick={() => setFilterCat(c)} style={{ fontSize: 12, padding: "4px 12px", borderRadius: 20, cursor: "pointer", background: filterCat === c ? (getCatColor(c) || "#378ADD") : "#f5f5f5", color: filterCat === c ? "#fff" : "#555", border: "none" }}>{c}</button>
+                ))}
+              </div>
+
+              {filtered.length === 0 && (
+                <div style={{ textAlign: "center", padding: "3rem 0", color: "#bbb" }}>
+                  <div style={{ fontSize: 40, marginBottom: 8 }}>🧊</div>
+                  <p style={{ margin: 0 }}>재료를 추가하거나 사진을 스캔해보세요!</p>
+                </div>
+              )}
+
+              {filtered.map(item => (
+                <div key={item.id} style={s.card}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: getCatColor(item.category), flexShrink: 0 }}></span>
+                    <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{item.name}</span>
+                    <span style={{ fontSize: 14, color: "#555" }}>{item.qty}{item.unit}</span>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: getCatColor(item.category) + "22", color: getCatColor(item.category), fontWeight: 500 }}>{item.category}</span>
+                    <button onClick={() => removeItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", fontSize: 18 }}>×</button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 18 }}>
+                    <span style={{ fontSize: 12, color: "#aaa" }}>사용:</span>
+                    <input type="number" placeholder="0" value={useQty[item.id] || ""} onChange={e => setUseQty(p => ({ ...p, [item.id]: e.target.value }))} style={{ ...s.input, width: 65, fontSize: 13 }} />
+                    <span style={{ fontSize: 12, color: "#aaa" }}>{item.unit}</span>
+                    <button onClick={() => applyUse(item)} style={{ ...s.btn(false), padding: "4px 14px", fontSize: 12 }}>적용</button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* AI 추천 탭 */}
+          {tab === "ai" && (
+            <div>
+              <div style={s.card}>
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 8px" }}>현재 재료: {items.length === 0 ? "없음" : items.map(i => i.name).join(", ")}</p>
+                <textarea placeholder="예) 다이어트 식단으로 추천해줘 / 10분 안에 만들 수 있는 거 / 애들이 좋아할 만한 요리" value={aiInput} onChange={e => setAiInput(e.target.value)} style={{ ...s.input, height: 80, resize: "none", marginBottom: 10 }} />
+                <button onClick={callAI} disabled={aiLoading || items.length === 0 || !aiInput.trim()} style={{ ...s.btn(true), width: "100%", opacity: (items.length===0||!aiInput.trim()) ? 0.4 : 1 }}>
+                  {aiLoading ? "추천 중..." : "레시피 추천받기 ✨"}
+                </button>
+              </div>
+              {aiResult === "error" && <p style={{ color: "#E24B4A", fontSize: 14 }}>오류가 생겼어요. 다시 시도해주세요.</p>}
+              {Array.isArray(aiResult) && aiResult.map((r, i) => (
+                <div key={i} style={s.card}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{r.name}</span>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#e8f4ff", color: "#378ADD" }}>{r.difficulty}</span>
+                  </div>
+                  <p style={{ fontSize: 13, color: "#666", margin: "0 0 6px" }}>재료: {r.ingredients.join(", ")}</p>
+                  <p style={{ fontSize: 13, color: "#333", margin: 0 }}>💡 {r.tip}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 카테고리 관리 탭 */}
+          {tab === "cats" && (
+            <div>
+              <div style={s.card}>
+                <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 12px" }}>새 카테고리 추가</p>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                  <input style={{ ...s.input, flex: 1 }} placeholder="카테고리 이름" value={newCatName} onChange={e => setNewCatName(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategory()} />
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", maxWidth: 140 }}>
+                    {COLORS.map(c => (
+                      <div key={c} onClick={() => setNewCatColor(c)} style={{ width: 18, height: 18, borderRadius: "50%", background: c, cursor: "pointer", border: newCatColor === c ? "2px solid #222" : "2px solid transparent" }} />
+                    ))}
+                  </div>
+                </div>
+                <button onClick={addCategory} style={{ ...s.btn(true), width: "100%" }}>+ 추가</button>
+              </div>
+
+              <div style={s.card}>
+                <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 12px" }}>카테고리 목록</p>
+                {categories.map(cat => (
+                  <div key={cat.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: "50%", background: cat.color, flexShrink: 0 }}></span>
+                    {editingCat === cat.name ? (
+                      <input
+                        autoFocus
+                        defaultValue={cat.name}
+                        onBlur={e => updateCategoryName(cat.name, e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && updateCategoryName(cat.name, e.target.value)}
+                        style={{ ...s.input, flex: 1, fontSize: 13 }}
+                      />
+                    ) : (
+                      <span style={{ flex: 1, fontSize: 14 }}>{cat.name}</span>
+                    )}
+                    <div style={{ display: "flex", gap: 3 }}>
+                      {COLORS.map(c => (
+                        <div key={c} onClick={() => updateCategoryColor(cat.name, c)} style={{ width: 14, height: 14, borderRadius: "50%", background: c, cursor: "pointer", border: cat.color === c ? "2px solid #222" : "2px solid transparent" }} />
+                      ))}
+                    </div>
+                    <button onClick={() => setEditingCat(editingCat === cat.name ? null : cat.name)} style={{ ...s.btn(false), padding: "3px 10px", fontSize: 12 }}>수정</button>
+                    <button onClick={() => removeCategory(cat.name)} style={{ ...s.btn(false), padding: "3px 10px", fontSize: 12, color: "#E24B4A", borderColor: "#fcc" }}>삭제</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
