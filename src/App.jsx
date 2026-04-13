@@ -89,9 +89,9 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || items.length === 0) return;
     const obj = {};
-    items.forEach(i => { obj[i.id] = i; });
+    items.forEach(i => { obj[String(i.id).replace(/\./g, "_")] = i; });
     set(ref(db, `users/${user.uid}/items`), obj);
   }, [items, user]);
 
