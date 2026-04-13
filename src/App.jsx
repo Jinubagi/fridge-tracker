@@ -23,6 +23,8 @@ const DEFAULT_CATEGORIES = [
 
 const COLORS = ["#1D9E75","#D85A30","#A32D2D","#0F6E56","#BA7517","#EF9F27","#639922","#7F77DD","#D4537E","#378ADD","#993556","#185FA5","#72243E","#534AB7","#5F5E5A","#0C447C","#854F0B","#3B6D11"];
 
+const genId = () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
 async function callClaude(prompt, imageBase64 = null) {
   const content = imageBase64
     ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } }, { type: "text", text: prompt }]
@@ -58,12 +60,12 @@ export default function App() {
   const [newCatColor, setNewCatColor] = useState(COLORS[0]);
   const [editingCat, setEditingCat] = useState(null);
   const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
-  const fileRef = useRef();
+  const cameraRef = useRef();
+  const galleryRef = useRef();
 
   const getCatColor = (name) => categories.find(c => c.name === name)?.color || "#888";
   const catNames = categories.map(c => c.name);
 
-  // 로그인 상태 감지
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -72,7 +74,6 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Firebase에서 데이터 불러오기
   useEffect(() => {
     if (!user) return;
     const itemsRef = ref(db, `users/${user.uid}/items`);
@@ -86,7 +87,6 @@ export default function App() {
     return () => { unsub1(); unsub2(); };
   }, [user]);
 
-  // Firebase에 데이터 저장
   useEffect(() => {
     if (!user) return;
     const obj = {};
@@ -130,6 +130,7 @@ export default function App() {
   const handlePhoto = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    e.target.value = "";
     setScanning(true);
     setScanned([]);
     setTab("scan");
@@ -146,7 +147,7 @@ export default function App() {
 {"items":[{"name":"상품명","qty":1,"unit":"개","category":"분류"}]}
 카테고리는 반드시 이 목록 중 하나로만 분류하세요: ${catList}`, base64);
         const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-        setScanned(parsed.items.map((i, idx) => ({ ...i, id: `scan-${idx}` })));
+        setScanned(parsed.items.map(i => ({ ...i, id: genId() })));
       } catch { setScanned([]); }
       setScanning(false);
     };
@@ -156,7 +157,8 @@ export default function App() {
   const updateScanned = (id, field, val) => setScanned(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i));
 
   const confirmScanned = () => {
-    setItems(prev => [...prev, ...scanned.map(i => ({ ...i, id: Date.now() + Math.random() }))]);
+    if (scanned.length === 0) return;
+    setItems(prev => [...prev, ...scanned.map(i => ({ ...i, id: genId() }))]);
     setScanned([]);
     setTab("fridge");
   };
@@ -173,7 +175,7 @@ export default function App() {
 
   const addItem = () => {
     if (!form.name.trim()) return;
-    setItems(prev => [...prev, { ...form, qty: parseFloat(form.qty) || 1, id: Date.now() }]);
+    setItems(prev => [...prev, { ...form, qty: parseFloat(form.qty) || 1, id: genId() }]);
     setForm(p => ({ ...p, name: "", qty: "" }));
   };
 
@@ -205,7 +207,6 @@ export default function App() {
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
 
-      {/* 로딩 */}
       {authLoading && (
         <div style={{ textAlign: "center", padding: "4rem 0", color: "#aaa" }}>
           <div style={{ fontSize: 40 }}>🧊</div>
@@ -213,7 +214,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 로그인 화면 */}
       {!authLoading && !user && (
         <div style={{ textAlign: "center", padding: "4rem 1rem" }}>
           <div style={{ fontSize: 50, marginBottom: 16 }}>🧊</div>
@@ -226,29 +226,30 @@ export default function App() {
         </div>
       )}
 
-      {/* 메인 앱 */}
       {!authLoading && user && (
         <>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: 8 }}>
             <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>🧊 냉장고 트래커</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <img src={user.photoURL} width={28} height={28} style={{ borderRadius: "50%" }} alt="profile" />
-              <button onClick={() => fileRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75" }}>
-                📷 스캔
+              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>
+                📷 카메라
+              </button>
+              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>
+                🖼️ 갤러리
               </button>
               <button onClick={logout} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>로그아웃</button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
+            <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
           </div>
 
-          {/* 탭 */}
           <div style={{ display: "flex", gap: 8, marginBottom: "1rem" }}>
             {[["fridge","🧊 냉장고"],["ai","✨ AI 추천"],["cats","📂 카테고리"]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} style={s.btn(tab===id)}>{label}</button>
             ))}
           </div>
 
-          {/* 스캔 결과 */}
           {tab === "scan" && (
             <div style={s.card}>
               {scanning ? (
@@ -284,7 +285,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 냉장고 탭 */}
           {tab === "fridge" && (
             <>
               <div style={s.card}>
@@ -333,7 +333,6 @@ export default function App() {
             </>
           )}
 
-          {/* AI 추천 탭 */}
           {tab === "ai" && (
             <div>
               <div style={s.card}>
@@ -357,7 +356,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 카테고리 관리 탭 */}
           {tab === "cats" && (
             <div>
               <div style={s.card}>
