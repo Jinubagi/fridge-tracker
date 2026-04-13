@@ -59,7 +59,8 @@ export default function App() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState(COLORS[0]);
   const [editingCat, setEditingCat] = useState(null);
-  const [recipeModal, setRecipeModal] = useState(null); // {recipe, usages: [{item, used}]}
+  const [form, setForm] = useState({ name: "", qty: "", unit: "개", category: DEFAULT_CATEGORIES[0].name });
+  const [recipeModal, setRecipeModal] = useState(null);
   const cameraRef = useRef();
   const galleryRef = useRef();
 
