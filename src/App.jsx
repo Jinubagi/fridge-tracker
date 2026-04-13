@@ -190,32 +190,37 @@ export default function App() {
 현재 냉장고 재료: ${list}
 사용자 요청: ${aiInput}
 반드시 아래 JSON 형식으로만 응답하세요:
-{"recipes":[{"name":"요리명","ingredients":["재료1(사용량, 예: 계란 2개)"],"tip":"팁","difficulty":"쉬움/보통/어려움"}]}`);
+{"recipes":[{"name":"요리명","ingredients":["재료명 수량(예: 계란 2개)"],"tip":"팁","difficulty":"쉬움/보통/어려움"}]}`);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       setAiResult(parsed.recipes);
     } catch { setAiResult("error"); }
     setAiLoading(false);
   };
 
-  const applyRecipe = (recipe) => {
-    // 레시피 재료명과 냉장고 재료 매칭해서 차감
-    let newItems = [...items];
-    recipe.ingredients.forEach(ingStr => {
-      // "계란 2개" 같은 형식에서 재료명 추출
-      const matched = newItems.find(item => ingStr.includes(item.name));
-      if (!matched) return;
-      // 수량 추출 시도
+  const openRecipeModal = (recipe) => {
+    const usages = recipe.ingredients.map(ingStr => {
+      const matched = items.find(item => ingStr.includes(item.name));
+      if (!matched) return { item: null, ingStr, used: 1 };
       const numMatch = ingStr.match(/(\d+(\.\d+)?)/);
       const used = numMatch ? parseFloat(numMatch[1]) : 1;
-      const newQty = Math.max(0, matched.qty - used);
+      return { item: matched, ingStr, used };
+    });
+    setRecipeModal({ recipe, usages });
+  };
+
+  const confirmRecipe = () => {
+    let newItems = [...items];
+    recipeModal.usages.forEach(({ item, used }) => {
+      if (!item) return;
+      const newQty = Math.max(0, item.qty - used);
       if (newQty === 0) {
-        newItems = newItems.filter(i => i.id !== matched.id);
+        newItems = newItems.filter(i => i.id !== item.id);
       } else {
-        newItems = newItems.map(i => i.id === matched.id ? { ...i, qty: newQty } : i);
+        newItems = newItems.map(i => i.id === item.id ? { ...i, qty: newQty } : i);
       }
     });
     setItems(newItems);
-    alert(`✅ "${recipe.name}" 재료가 냉장고에서 차감됐어요!`);
+    setRecipeModal(null);
   };
 
   const filtered = filterCat === "전체" ? items : items.filter(i => i.category === filterCat);
@@ -228,6 +233,48 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+
+      {/* 해먹었어요 확인 모달 */}
+      {recipeModal && (
+        <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 17 }}>✅ {recipeModal.recipe.name}</h3>
+            <p style={{ fontSize: 13, color: "#888", margin: "0 0 16px" }}>사용한 재료와 수량을 확인해주세요!</p>
+            {recipeModal.usages.map((u, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                {u.item ? (
+                  <>
+                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: getCatColor(u.item.category), flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14 }}>{u.item.name}</span>
+                    <span style={{ fontSize: 12, color: "#aaa" }}>보유: {u.item.qty}{u.item.unit}</span>
+                    <input
+                      type="number"
+                      value={u.used}
+                      min={0}
+                      max={u.item.qty}
+                      onChange={e => setRecipeModal(prev => ({
+                        ...prev,
+                        usages: prev.usages.map((x, j) => j === i ? { ...x, used: parseFloat(e.target.value) || 0 } : x)
+                      }))}
+                      style={{ ...s.input, width: 60, fontSize: 13 }}
+                    />
+                    <span style={{ fontSize: 12, color: "#aaa" }}>{u.item.unit}</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ddd", flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14, color: "#aaa" }}>{u.ingStr} (냉장고에 없음)</span>
+                  </>
+                )}
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button onClick={confirmRecipe} style={{ ...s.btn(true), flex: 1 }}>확정 — 재료 차감</button>
+              <button onClick={() => setRecipeModal(null)} style={s.btn(false)}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {authLoading && (
         <div style={{ textAlign: "center", padding: "4rem 0", color: "#aaa" }}>
@@ -254,12 +301,8 @@ export default function App() {
             <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>🧊 냉장고 트래커</h2>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <img src={user.photoURL} width={28} height={28} style={{ borderRadius: "50%" }} alt="profile" />
-              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>
-                📷 카메라
-              </button>
-              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>
-                🖼️ 갤러리
-              </button>
+              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>📷 카메라</button>
+              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>🖼️ 갤러리</button>
               <button onClick={logout} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>로그아웃</button>
             </div>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
