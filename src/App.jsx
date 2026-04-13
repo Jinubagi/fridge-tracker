@@ -189,11 +189,32 @@ export default function App() {
 현재 냉장고 재료: ${list}
 사용자 요청: ${aiInput}
 반드시 아래 JSON 형식으로만 응답하세요:
-{"recipes":[{"name":"요리명","ingredients":["재료1"],"tip":"팁","difficulty":"쉬움/보통/어려움"}]}`);
+{"recipes":[{"name":"요리명","ingredients":["재료1(사용량, 예: 계란 2개)"],"tip":"팁","difficulty":"쉬움/보통/어려움"}]}`);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       setAiResult(parsed.recipes);
     } catch { setAiResult("error"); }
     setAiLoading(false);
+  };
+
+  const applyRecipe = (recipe) => {
+    // 레시피 재료명과 냉장고 재료 매칭해서 차감
+    let newItems = [...items];
+    recipe.ingredients.forEach(ingStr => {
+      // "계란 2개" 같은 형식에서 재료명 추출
+      const matched = newItems.find(item => ingStr.includes(item.name));
+      if (!matched) return;
+      // 수량 추출 시도
+      const numMatch = ingStr.match(/(\d+(\.\d+)?)/);
+      const used = numMatch ? parseFloat(numMatch[1]) : 1;
+      const newQty = Math.max(0, matched.qty - used);
+      if (newQty === 0) {
+        newItems = newItems.filter(i => i.id !== matched.id);
+      } else {
+        newItems = newItems.map(i => i.id === matched.id ? { ...i, qty: newQty } : i);
+      }
+    });
+    setItems(newItems);
+    alert(`✅ "${recipe.name}" 재료가 냉장고에서 차감됐어요!`);
   };
 
   const filtered = filterCat === "전체" ? items : items.filter(i => i.category === filterCat);
@@ -346,11 +367,27 @@ export default function App() {
               {Array.isArray(aiResult) && aiResult.map((r, i) => (
                 <div key={i} style={s.card}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>{r.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{r.name}</span>
                     <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#e8f4ff", color: "#378ADD" }}>{r.difficulty}</span>
                   </div>
                   <p style={{ fontSize: 13, color: "#666", margin: "0 0 6px" }}>재료: {r.ingredients.join(", ")}</p>
-                  <p style={{ fontSize: 13, color: "#333", margin: 0 }}>💡 {r.tip}</p>
+                  <p style={{ fontSize: 13, color: "#333", margin: "0 0 12px" }}>💡 {r.tip}</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <a
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(r.name + " 레시피")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", textDecoration: "none", color: "#E24B4A", borderColor: "#fcc", display: "inline-block" }}
+                    >
+                      ▶ 유튜브 보기
+                    </a>
+                    <button
+                      onClick={() => applyRecipe(r)}
+                      style={{ ...s.btn(false), fontSize: 12, padding: "5px 12px", color: "#1D9E75", borderColor: "#1D9E75" }}
+                    >
+                      ✅ 해먹었어요
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
