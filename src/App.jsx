@@ -49,6 +49,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false); // 최초 로드 완료 여부
   const [tab, setTab] = useState("fridge");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState([]);
@@ -67,7 +68,6 @@ export default function App() {
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [familyMsg, setFamilyMsg] = useState("");
   const [showFamilyPanel, setShowFamilyPanel] = useState(false);
-  const [saveLock, setSaveLock] = useState(false); // 불러오는 중 저장 방지
   const cameraRef = useRef();
   const galleryRef = useRef();
 
@@ -92,46 +92,42 @@ export default function App() {
     return unsub;
   }, []);
 
-  // 데이터 불러오기 — dataPath 바뀔 때마다 리스너 재연결
+  // 데이터 불러오기
   useEffect(() => {
     if (!user || !dataPath) return;
-    setSaveLock(true);
-    const itemsRef = ref(db, `${dataPath}/items`);
-    const catsRef = ref(db, `${dataPath}/categories`);
+    setLoaded(false);
 
-    const unsub1 = onValue(itemsRef, (snap) => {
+    const unsub1 = onValue(ref(db, `${dataPath}/items`), (snap) => {
       setItems(snap.val() ? Object.values(snap.val()) : []);
-      setSaveLock(false);
+      setLoaded(true);
     });
-    const unsub2 = onValue(catsRef, (snap) => {
+    const unsub2 = onValue(ref(db, `${dataPath}/categories`), (snap) => {
       setCategories(snap.val() ? Object.values(snap.val()) : DEFAULT_CATEGORIES);
     });
-
     let unsub3 = () => {};
     if (familyCode) {
       unsub3 = onValue(ref(db, `families/${familyCode}/members`), (snap) => {
         setFamilyMembers(snap.val() ? Object.values(snap.val()) : []);
       });
     }
-
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [user, dataPath, familyCode]);
 
-  // 아이템 저장
+  // 아이템 저장 — 로드 완료 후에만 저장
   useEffect(() => {
-    if (!user || !dataPath || saveLock) return;
+    if (!user || !dataPath || !loaded) return;
     const obj = {};
     items.forEach(i => { obj[String(i.id).replace(/\./g, "_")] = i; });
     set(ref(db, `${dataPath}/items`), items.length === 0 ? null : obj);
-  }, [items, user, dataPath, saveLock]);
+  }, [items]);
 
-  // 카테고리 저장
+  // 카테고리 저장 — 로드 완료 후에만 저장
   useEffect(() => {
-    if (!user || !dataPath || saveLock) return;
+    if (!user || !dataPath || !loaded) return;
     const obj = {};
     categories.forEach((c, i) => { obj[i] = c; });
     set(ref(db, `${dataPath}/categories`), obj);
-  }, [categories, user, dataPath, saveLock]);
+  }, [categories]);
 
   const login = () => signInWithPopup(auth, provider);
   const logout = () => {
@@ -140,6 +136,7 @@ export default function App() {
     setCategories(DEFAULT_CATEGORIES);
     setFamilyCode(null);
     setFamilyMembers([]);
+    setLoaded(false);
   };
 
   const createFamily = async () => {
@@ -176,6 +173,7 @@ export default function App() {
     await remove(ref(db, `users/${user.uid}/familyCode`));
     setFamilyCode(null);
     setFamilyMembers([]);
+    setLoaded(false);
     setFamilyMsg("가족 냉장고에서 나왔어요.");
   };
 
@@ -305,7 +303,6 @@ export default function App() {
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
 
-      {/* 해먹었어요 모달 */}
       {recipeModal && (
         <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
@@ -342,7 +339,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 가족 공유 패널 */}
       {showFamilyPanel && (
         <div style={{ position: "fixed", inset: 0, background: "#0006", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "100%", maxWidth: 420 }}>
