@@ -69,7 +69,7 @@ export default function App() {
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [familyMsg, setFamilyMsg] = useState("");
   const [showFamilyPanel, setShowFamilyPanel] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
+  const cameraRef = useRef();
   const galleryRef = useRef();
 
   const dataPath = useMemo(() => {
@@ -127,11 +127,8 @@ export default function App() {
   }, [categories]);
 
   const login = () => {
-    if (isMobile) {
-      signInWithRedirect(auth, provider);
-    } else {
-      signInWithPopup(auth, provider);
-    }
+    if (isMobile) signInWithRedirect(auth, provider);
+    else signInWithPopup(auth, provider);
   };
 
   const logout = () => {
@@ -154,7 +151,7 @@ export default function App() {
     if (catsSnap.val()) await set(ref(db, `families/${code}/categories`), catsSnap.val());
     await set(ref(db, `users/${user.uid}/familyCode`), code);
     setFamilyCode(code);
-    setFamilyMsg(`✅ 가족 코드 생성 완료!`);
+    setFamilyMsg("✅ 가족 코드 생성 완료!");
   };
 
   const joinFamily = async () => {
@@ -303,6 +300,53 @@ export default function App() {
     btn: (active, color) => ({ padding: "7px 14px", borderRadius: 8, border: `1px solid ${active ? (color||"#378ADD") : "#ddd"}`, background: active ? (color||"#378ADD") : "#fff", color: active ? "#fff" : "#444", cursor: "pointer", fontSize: 14 }),
     input: { padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14, width: "100%", boxSizing: "border-box" },
   };
+
+  const guideData = [
+    {
+      emoji: "🧊", title: "냉장고 탭 — 재료 관리",
+      items: [
+        "재료명, 수량, 단위, 카테고리를 입력하고 + 추가 버튼을 누르면 냉장고에 추가돼요.",
+        "각 재료 카드 아래 '사용' 칸에 사용한 수량을 입력하고 적용을 누르면 수량이 줄어요. 0이 되면 자동으로 삭제돼요.",
+        "× 버튼을 누르면 재료를 바로 삭제할 수 있어요.",
+        "상단 카테고리 필터 버튼으로 원하는 종류만 볼 수 있어요.",
+      ]
+    },
+    {
+      emoji: "📷", title: "스캔하기 / 사진 불러오기",
+      items: [
+        "📷 스캔하기: 카메라로 냉장고 내부, 영수증, 식품 사진을 찍으면 AI가 자동으로 재료를 인식해요.",
+        "🖼️ 사진 불러오기: 갤러리에 저장된 사진을 불러와서 스캔할 수 있어요.",
+        "인식된 목록을 확인하고 수정한 뒤 '냉장고에 추가' 버튼을 누르면 한번에 추가돼요.",
+        "잘못 인식된 항목은 × 버튼으로 제거하거나 직접 수정할 수 있어요.",
+      ]
+    },
+    {
+      emoji: "✨", title: "AI 추천 탭 — 레시피 추천",
+      items: [
+        "냉장고에 재료가 있어야 추천을 받을 수 있어요.",
+        "텍스트 칸에 원하는 조건을 자유롭게 입력해요. 예) '10분 안에 만들 수 있는 거', '다이어트 식단', '애들이 좋아할 요리'",
+        "▶ 유튜브 보기 버튼을 누르면 해당 요리 레시피 영상을 바로 찾아볼 수 있어요.",
+        "✅ 해먹었어요 버튼을 누르면 사용한 재료 목록이 뜨고, 수량 확인 후 확정하면 냉장고에서 자동으로 차감돼요.",
+      ]
+    },
+    {
+      emoji: "👨‍👩‍👧", title: "가족 냉장고 — 가족과 공유",
+      items: [
+        "상단 '가족 냉장고' 버튼을 누르면 공유 패널이 열려요.",
+        "➕ 가족 코드 만들기를 누르면 6자리 코드가 생성돼요. 이 코드를 가족에게 공유하세요!",
+        "가족은 코드 입력 후 참여 버튼을 누르면 같은 냉장고를 공유할 수 있어요.",
+        "가족 냉장고에 참여하면 어느 기기에서든 실시간으로 같은 냉장고 내용이 보여요.",
+        "나가기 버튼을 누르면 개인 냉장고로 돌아와요.",
+      ]
+    },
+    {
+      emoji: "📂", title: "카테고리 탭 — 카테고리 관리",
+      items: [
+        "새 카테고리를 추가하거나 기존 카테고리 이름과 색상을 변경할 수 있어요.",
+        "카테고리를 삭제하면 해당 재료들은 자동으로 '기타'로 이동해요.",
+      ]
+    },
+  ];
 
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "1rem", fontFamily: "system-ui, sans-serif", color: "#222" }}>
@@ -580,54 +624,14 @@ export default function App() {
               </div>
             </div>
           )}
+
           {tab === "guide" && (
             <div>
-              {[
-                {
-                  emoji: "🧊", title: "냉장고 탭 — 재료 관리",
-                  items: [
-                    "재료명, 수량, 단위, 카테고리를 입력하고 + 추가 버튼을 누르면 냉장고에 추가돼요.",
-                    "각 재료 카드 아래 '사용' 칸에 사용한 수량을 입력하고 적용을 누르면 수량이 줄어요. 0이 되면 자동으로 삭제돼요.",
-                    "× 버튼을 누르면 재료를 바로 삭제할 수 있어요.",
-                    "상단 카테고리 필터 버튼으로 원하는 종류만 볼 수 있어요.",
-                  ]
-                },
-                {
-                  emoji: "📷", title: "스캔하기 — 사진으로 재료 추가",
-                  items: [
-                    "📷 스캔하기: 카메라로 냉장고 내부, 영수증, 식품 사진을 찍으면 AI가 자동으로 재료를 인식해요.",
-                    "🖼️ 사진 불러오기: 갤러리에 저장된 사진을 불러와서 스캔할 수 있어요.",
-                    "인식된 목록을 확인하고 수정한 뒤 '냉장고에 추가' 버튼을 누르면 한번에 추가돼요.",
-                    "잘못 인식된 항목은 × 버튼으로 제거하거나 직접 수정할 수 있어요.",
-                  ]
-                },
-                {
-                  emoji: "✨", title: "AI 추천 탭 — 레시피 추천",
-                  items: [
-                    "냉장고에 재료가 있어야 추천을 받을 수 있어요.",
-                    "텍스트 칸에 원하는 조건을 자유롭게 입력해요. 예) '10분 안에 만들 수 있는 거', '다이어트 식단', '애들이 좋아할 요리'",
-                    "▶ 유튜브 보기 버튼을 누르면 해당 요리 레시피 영상을 바로 찾아볼 수 있어요.",
-                    "✅ 해먹었어요 버튼을 누르면 사용한 재료 목록이 뜨고, 수량을 확인 후 확정하면 냉장고에서 자동으로 차감돼요.",
-                  ]
-                },
-                {
-                  emoji: "👨‍👩‍👧", title: "가족 냉장고 — 가족과 공유",
-                  items: [
-                    "가족 냉장고 버튼을 누르면 공유 패널이 열려요.",
-                    "➕ 가족 코드 만들기를 누르면 6자리 코드가 생성돼요. 이 코드를 가족에게 공유하세요!",
-                    "가족은 코드 입력 후 참여 버튼을 누르면 같은 냉장고를 공유할 수 있어요.",
-                    "가족 냉장고에 참여하면 어느 기기에서든 실시간으로 같은 냉장고 내용이 보여요.",
-                    "나가기 버튼을 누르면 개인 냉장고로 돌아와요.",
-                  ]
-                },
-                {
-                  emoji: "📂", title: "카테고리 탭 — 카테고리 관리",
-                  items: [
-                    "새 카테고리를 추가하거나 기존 카테고리 이름과 색상을 변경할 수 있어요.",
-                    "카테고리를 삭제하면 해당 재료들은 자동으로 '기타'로 이동해요.",
-                  ]
-                },
-              ].map((section, i) => (
+              <div style={{ ...s.card, background: "#f0faf5", borderColor: "#1D9E75" }}>
+                <p style={{ fontSize: 14, color: "#1D9E75", fontWeight: 600, margin: "0 0 4px" }}>👋 냉장고 트래커에 오신 것을 환영해요!</p>
+                <p style={{ fontSize: 13, color: "#555", margin: 0 }}>냉장고 속 재료를 쉽게 관리하고, AI가 오늘의 요리를 추천해드려요. 아래 설명을 참고해서 시작해보세요!</p>
+              </div>
+              {guideData.map((section, i) => (
                 <div key={i} style={s.card}>
                   <p style={{ fontSize: 15, fontWeight: 600, margin: "0 0 12px" }}>{section.emoji} {section.title}</p>
                   {section.items.map((item, j) => (
@@ -640,3 +644,8 @@ export default function App() {
               ))}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
