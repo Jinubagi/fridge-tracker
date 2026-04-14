@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { auth, provider, db } from "./firebase";
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, set, get, remove } from "firebase/database";
 
 const DEFAULT_CATEGORIES = [
@@ -25,7 +25,6 @@ const COLORS = ["#1D9E75","#D85A30","#A32D2D","#0F6E56","#BA7517","#EF9F27","#63
 
 const genId = () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 const genCode = () => Math.random().toString(36).substr(2, 6).toUpperCase();
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 async function callClaude(prompt, imageBase64 = null) {
   const content = imageBase64
@@ -81,7 +80,6 @@ export default function App() {
   const catNames = categories.map(c => c.name);
 
   useEffect(() => {
-    getRedirectResult(auth).catch(() => {});
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -126,10 +124,7 @@ export default function App() {
     set(ref(db, `${dataPath}/categories`), obj);
   }, [categories]);
 
-  const login = () => {
-    if (isMobile) signInWithRedirect(auth, provider);
-    else signInWithPopup(auth, provider);
-  };
+  const login = () => signInWithPopup(auth, provider);
 
   const logout = () => {
     signOut(auth);
@@ -644,7 +639,6 @@ export default function App() {
               ))}
             </div>
           )}
-        </>
         </>
       )}
     </div>
