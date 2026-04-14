@@ -69,7 +69,7 @@ export default function App() {
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [familyMsg, setFamilyMsg] = useState("");
   const [showFamilyPanel, setShowFamilyPanel] = useState(false);
-  const cameraRef = useRef();
+  const [showGuide, setShowGuide] = useState(false);
   const galleryRef = useRef();
 
   const dataPath = useMemo(() => {
@@ -411,17 +411,17 @@ export default function App() {
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <img src={user.photoURL} width={28} height={28} style={{ borderRadius: "50%" }} alt="profile" />
-              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>📷</button>
-              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 13 }}>🖼️</button>
-              <button onClick={() => setShowFamilyPanel(true)} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>👨‍👩‍👧 가족</button>
+              <button onClick={() => cameraRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 12 }}>📷 스캔하기</button>
+              <button onClick={() => galleryRef.current.click()} style={{ ...s.btn(false), background: "#f0faf5", color: "#1D9E75", borderColor: "#1D9E75", fontSize: 12 }}>🖼️ 사진 불러오기</button>
+              <button onClick={() => setShowFamilyPanel(true)} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>👨‍👩‍👧 가족 냉장고</button>
               <button onClick={logout} style={{ ...s.btn(false), fontSize: 12, padding: "5px 10px" }}>로그아웃</button>
             </div>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
             <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: "1rem" }}>
-            {[["fridge","🧊 냉장고"],["ai","✨ AI 추천"],["cats","📂 카테고리"]].map(([id, label]) => (
+          <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
+            {[["fridge","🧊 냉장고"],["ai","✨ AI 추천"],["cats","📂 카테고리"],["guide","📖 사용설명서"]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} style={s.btn(tab===id)}>{label}</button>
             ))}
           </div>
@@ -580,8 +580,63 @@ export default function App() {
               </div>
             </div>
           )}
-        </>
-      )}
-    </div>
-  );
-}
+          {tab === "guide" && (
+            <div>
+              {[
+                {
+                  emoji: "🧊", title: "냉장고 탭 — 재료 관리",
+                  items: [
+                    "재료명, 수량, 단위, 카테고리를 입력하고 + 추가 버튼을 누르면 냉장고에 추가돼요.",
+                    "각 재료 카드 아래 '사용' 칸에 사용한 수량을 입력하고 적용을 누르면 수량이 줄어요. 0이 되면 자동으로 삭제돼요.",
+                    "× 버튼을 누르면 재료를 바로 삭제할 수 있어요.",
+                    "상단 카테고리 필터 버튼으로 원하는 종류만 볼 수 있어요.",
+                  ]
+                },
+                {
+                  emoji: "📷", title: "스캔하기 — 사진으로 재료 추가",
+                  items: [
+                    "📷 스캔하기: 카메라로 냉장고 내부, 영수증, 식품 사진을 찍으면 AI가 자동으로 재료를 인식해요.",
+                    "🖼️ 사진 불러오기: 갤러리에 저장된 사진을 불러와서 스캔할 수 있어요.",
+                    "인식된 목록을 확인하고 수정한 뒤 '냉장고에 추가' 버튼을 누르면 한번에 추가돼요.",
+                    "잘못 인식된 항목은 × 버튼으로 제거하거나 직접 수정할 수 있어요.",
+                  ]
+                },
+                {
+                  emoji: "✨", title: "AI 추천 탭 — 레시피 추천",
+                  items: [
+                    "냉장고에 재료가 있어야 추천을 받을 수 있어요.",
+                    "텍스트 칸에 원하는 조건을 자유롭게 입력해요. 예) '10분 안에 만들 수 있는 거', '다이어트 식단', '애들이 좋아할 요리'",
+                    "▶ 유튜브 보기 버튼을 누르면 해당 요리 레시피 영상을 바로 찾아볼 수 있어요.",
+                    "✅ 해먹었어요 버튼을 누르면 사용한 재료 목록이 뜨고, 수량을 확인 후 확정하면 냉장고에서 자동으로 차감돼요.",
+                  ]
+                },
+                {
+                  emoji: "👨‍👩‍👧", title: "가족 냉장고 — 가족과 공유",
+                  items: [
+                    "가족 냉장고 버튼을 누르면 공유 패널이 열려요.",
+                    "➕ 가족 코드 만들기를 누르면 6자리 코드가 생성돼요. 이 코드를 가족에게 공유하세요!",
+                    "가족은 코드 입력 후 참여 버튼을 누르면 같은 냉장고를 공유할 수 있어요.",
+                    "가족 냉장고에 참여하면 어느 기기에서든 실시간으로 같은 냉장고 내용이 보여요.",
+                    "나가기 버튼을 누르면 개인 냉장고로 돌아와요.",
+                  ]
+                },
+                {
+                  emoji: "📂", title: "카테고리 탭 — 카테고리 관리",
+                  items: [
+                    "새 카테고리를 추가하거나 기존 카테고리 이름과 색상을 변경할 수 있어요.",
+                    "카테고리를 삭제하면 해당 재료들은 자동으로 '기타'로 이동해요.",
+                  ]
+                },
+              ].map((section, i) => (
+                <div key={i} style={s.card}>
+                  <p style={{ fontSize: 15, fontWeight: 600, margin: "0 0 12px" }}>{section.emoji} {section.title}</p>
+                  {section.items.map((item, j) => (
+                    <div key={j} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
+                      <span style={{ color: "#1D9E75", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>•</span>
+                      <p style={{ fontSize: 13, color: "#444", margin: 0, lineHeight: 1.6 }}>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
