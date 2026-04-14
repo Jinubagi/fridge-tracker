@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { auth, provider, db } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, set, get, remove } from "firebase/database";
 
 const DEFAULT_CATEGORIES = [
@@ -25,6 +25,7 @@ const COLORS = ["#1D9E75","#D85A30","#A32D2D","#0F6E56","#BA7517","#EF9F27","#63
 
 const genId = () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 const genCode = () => Math.random().toString(36).substr(2, 6).toUpperCase();
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 async function callClaude(prompt, imageBase64 = null) {
   const content = imageBase64
@@ -49,7 +50,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [items, setItems] = useState([]);
-  const [loaded, setLoaded] = useState(false); // 최초 로드 완료 여부
+  const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("fridge");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState([]);
@@ -79,8 +80,8 @@ export default function App() {
   const getCatColor = (name) => categories.find(c => c.name === name)?.color || "#888";
   const catNames = categories.map(c => c.name);
 
-  // 로그인 감지
   useEffect(() => {
+    getRedirectResult(auth).catch(() => {});
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -92,11 +93,9 @@ export default function App() {
     return unsub;
   }, []);
 
-  // 데이터 불러오기
   useEffect(() => {
     if (!user || !dataPath) return;
     setLoaded(false);
-
     const unsub1 = onValue(ref(db, `${dataPath}/items`), (snap) => {
       setItems(snap.val() ? Object.values(snap.val()) : []);
       setLoaded(true);
@@ -113,7 +112,6 @@ export default function App() {
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [user, dataPath, familyCode]);
 
-  // 아이템 저장 — 로드 완료 후에만 저장
   useEffect(() => {
     if (!user || !dataPath || !loaded) return;
     const obj = {};
@@ -121,7 +119,6 @@ export default function App() {
     set(ref(db, `${dataPath}/items`), items.length === 0 ? null : obj);
   }, [items]);
 
-  // 카테고리 저장 — 로드 완료 후에만 저장
   useEffect(() => {
     if (!user || !dataPath || !loaded) return;
     const obj = {};
@@ -129,7 +126,14 @@ export default function App() {
     set(ref(db, `${dataPath}/categories`), obj);
   }, [categories]);
 
-  const login = () => signInWithPopup(auth, provider);
+  const login = () => {
+    if (isMobile) {
+      signInWithRedirect(auth, provider);
+    } else {
+      signInWithPopup(auth, provider);
+    }
+  };
+
   const logout = () => {
     signOut(auth);
     setItems([]);
