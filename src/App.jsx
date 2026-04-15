@@ -268,16 +268,12 @@ export default function App() {
   const TABS = [
     { id: "fridge", emoji: "🧊", label: "냉장고" },
     { id: "ai", emoji: "✨", label: "AI 레시피 추천" },
-    { id: "scan", emoji: "📷", label: "스캔하기" },
-    { id: "gallery", emoji: "🖼️", label: "사진 불러오기" },
-    { id: "family", emoji: "👨‍👩‍👧", label: "가족 냉장고" },
     { id: "cats", emoji: "📂", label: "카테고리 관리" },
+    { id: "family", emoji: "👨‍👩‍👧", label: "가족 냉장고" },
     { id: "guide", emoji: "📖", label: "사용설명서" },
   ];
 
   const handleTabClick = (id) => {
-    if (id === "scan") { cameraRef.current.click(); setMenuOpen(false); return; }
-    if (id === "gallery") { galleryRef.current.click(); setMenuOpen(false); return; }
     if (id === "family") { setShowFamilyPanel(true); setMenuOpen(false); return; }
     setTab(id); setMenuOpen(false);
   };
@@ -292,7 +288,7 @@ export default function App() {
 
   const guideData = [
     { emoji: "🧊", title: "냉장고 탭 — 재료 관리", items: ["재료명, 수량, 단위, 카테고리를 입력하고 + 추가 버튼을 누르면 냉장고에 추가돼요.", "각 재료 카드 아래 '사용' 칸에 사용한 수량을 입력하고 적용을 누르면 수량이 줄어요. 0이 되면 자동으로 삭제돼요.", "× 버튼을 누르면 재료를 바로 삭제할 수 있어요.", "상단 카테고리 필터 버튼으로 원하는 종류만 볼 수 있어요."] },
-    { emoji: "📷", title: "스캔 / 사진 불러오기", items: ["📷 스캔하기: 카메라로 냉장고 내부, 영수증, 식품 사진을 찍으면 AI가 자동으로 재료를 인식해요.", "🖼️ 사진 불러오기: 갤러리에 저장된 사진을 불러와서 스캔할 수 있어요.", "인식된 목록을 확인·수정한 뒤 '냉장고에 추가' 버튼을 누르면 한번에 추가돼요."] },
+    { emoji: "📷", title: "스캔 / 사진 불러오기", items: ["📷 카메라 스캔: 냉장고 내부, 영수증, 식품 사진을 찍으면 AI가 자동으로 재료를 인식해요.", "🖼️ 사진 불러오기: 갤러리에 저장된 사진을 불러와서 스캔할 수 있어요.", "인식된 목록을 확인·수정한 뒤 '냉장고에 추가' 버튼을 누르면 한번에 추가돼요."] },
     { emoji: "✨", title: "AI 레시피 추천", items: ["냉장고에 재료가 있어야 추천을 받을 수 있어요.", "원하는 조건을 자유롭게 입력해요. 예) '10분 안에 만들 수 있는 거', '다이어트 식단'", "▶ 유튜브 보기 버튼으로 레시피 영상을 바로 찾아볼 수 있어요.", "✅ 해먹었어요 버튼으로 사용한 재료를 냉장고에서 자동 차감할 수 있어요."] },
     { emoji: "👨‍👩‍👧", title: "가족 냉장고", items: ["메뉴에서 '가족 냉장고'를 누르면 공유 패널이 열려요.", "➕ 가족 코드 만들기로 6자리 코드를 생성하고 가족에게 공유하세요!", "가족은 코드 입력 후 참여하면 같은 냉장고를 실시간으로 함께 관리할 수 있어요."] },
     { emoji: "📂", title: "카테고리 관리", items: ["새 카테고리를 추가하거나 기존 카테고리 이름과 색상을 변경할 수 있어요.", "카테고리를 삭제하면 해당 재료들은 자동으로 '기타'로 이동해요."] },
@@ -301,12 +297,11 @@ export default function App() {
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: "#f5f6fa", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: "#1a1a1a" }}>
 
-      {/* 사이드 메뉴 오버레이 */}
+      {/* 사이드 메뉴 */}
       {menuOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200 }} onClick={() => setMenuOpen(false)}>
           <div style={{ position: "absolute", inset: 0, background: "#000", opacity: 0.35 }} />
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 280, background: "#fff", boxShadow: "4px 0 24px #0002", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
-            {/* 메뉴 헤더 */}
             <div style={{ background: "linear-gradient(135deg, #1D9E75, #0F6E56)", padding: "2rem 1.5rem 1.5rem", color: "#fff" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>🧊</div>
               <div style={{ fontWeight: 700, fontSize: 18 }}>냉장고 트래커</div>
@@ -320,8 +315,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {/* 메뉴 항목 */}
             <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem 0" }}>
               {TABS.map(t => (
                 <button key={t.id} onClick={() => handleTabClick(t.id)}
@@ -331,8 +324,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {/* 로그아웃 */}
             {user && (
               <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid #f0f0f0" }}>
                 <button onClick={() => { logout(); setMenuOpen(false); }}
@@ -417,7 +408,6 @@ export default function App() {
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhoto} />
       <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
 
-      {/* 로딩 */}
       {authLoading && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 12, color: "#aaa" }}>
           <div style={{ fontSize: 48 }}>🧊</div>
@@ -425,7 +415,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 로그인 화면 */}
       {!authLoading && !user && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", flexDirection: "column", padding: "2rem" }}>
           <div style={{ background: "#fff", borderRadius: 24, padding: "3rem 2rem", textAlign: "center", boxShadow: "0 4px 32px #0000000f", width: "100%", maxWidth: 360 }}>
@@ -440,7 +429,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 메인 앱 */}
       {!authLoading && user && (
         <div style={{ paddingBottom: "2rem" }}>
           {/* 헤더 */}
@@ -476,7 +464,6 @@ export default function App() {
 
           <div style={{ padding: "0.75rem 1rem 0" }}>
 
-            {/* 스캔 탭 */}
             {tab === "scan" && (
               <div style={s.card}>
                 {scanning ? (
@@ -515,11 +502,10 @@ export default function App() {
               </div>
             )}
 
-            {/* 냉장고 탭 */}
             {tab === "fridge" && (
               <>
                 <div style={s.card}>
-                  <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 10px", fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>재료 직접 추가</p>
+                  <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 10px", fontWeight: 600, letterSpacing: 0.5 }}>재료 직접 추가</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 50px 1fr", gap: 6, marginBottom: 10 }}>
                     <input style={s.input} placeholder="재료명" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem()} />
                     <input type="number" style={s.input} placeholder="수량" value={form.qty} onChange={e => setForm(p => ({ ...p, qty: e.target.value }))} />
@@ -564,7 +550,6 @@ export default function App() {
               </>
             )}
 
-            {/* AI 추천 탭 */}
             {tab === "ai" && (
               <div>
                 <div style={s.card}>
@@ -598,7 +583,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 카테고리 탭 */}
             {tab === "cats" && (
               <div>
                 <div style={s.card}>
@@ -639,7 +623,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 사용설명서 탭 */}
             {tab === "guide" && (
               <div>
                 <div style={{ ...s.card, background: "linear-gradient(135deg, #f0faf5, #e8f8f2)", border: "none" }}>
@@ -659,6 +642,8 @@ export default function App() {
                 ))}
               </div>
             )}
+
+          </div>
         </div>
       )}
     </div>
