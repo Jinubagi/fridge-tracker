@@ -458,7 +458,23 @@ export default function App() {
             <img src={user.photoURL} width={32} height={32} style={{ borderRadius: "50%", border: "2px solid #f0f0f0" }} alt="profile" />
           </div>
 
-          <div style={{ padding: "1rem 1rem 0" }}>
+          {/* 퀵 액션 버튼 */}
+          <div style={{ display: "flex", gap: 8, padding: "0.875rem 1rem 0" }}>
+            <button onClick={() => cameraRef.current.click()} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 8px", borderRadius: 14, border: "1.5px solid #e8e8e8", background: "#fff", cursor: "pointer", boxShadow: "0 1px 4px #0000000d" }}>
+              <span style={{ fontSize: 22 }}>📷</span>
+              <span style={{ fontSize: 11, color: "#555", fontWeight: 600 }}>카메라 스캔</span>
+            </button>
+            <button onClick={() => galleryRef.current.click()} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 8px", borderRadius: 14, border: "1.5px solid #e8e8e8", background: "#fff", cursor: "pointer", boxShadow: "0 1px 4px #0000000d" }}>
+              <span style={{ fontSize: 22 }}>🖼️</span>
+              <span style={{ fontSize: 11, color: "#555", fontWeight: 600 }}>사진 불러오기</span>
+            </button>
+            <button onClick={() => setTab("ai")} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 8px", borderRadius: 14, border: `1.5px solid ${tab === "ai" ? "#378ADD" : "#e8e8e8"}`, background: tab === "ai" ? "#e8f4ff" : "#fff", cursor: "pointer", boxShadow: "0 1px 4px #0000000d" }}>
+              <span style={{ fontSize: 22 }}>✨</span>
+              <span style={{ fontSize: 11, color: tab === "ai" ? "#378ADD" : "#555", fontWeight: 600 }}>AI 레시피</span>
+            </button>
+          </div>
+
+          <div style={{ padding: "0.75rem 1rem 0" }}>
 
             {/* 스캔 탭 */}
             {tab === "scan" && (
@@ -643,7 +659,6 @@ export default function App() {
                 ))}
               </div>
             )}
-          </div>
         </div>
       )}
     </div>
